@@ -221,7 +221,8 @@ module PE_IO_debug #(
     .WGHT_ADDR_ADDR(WGHT_ADDR_ADDR),
     .PSUM_ADDR(PSUM_ADDR),
     .TRANS_BITWIDTH_IACT(TRANS_BITWIDTH_IACT),
-    .TRANS_BITWIDTH_WGHT(TRANS_BITWIDTH_WGHT),
+    // DominoSearch: PE.v no longer declares TRANS_BITWIDTH_WGHT (upstream
+    // lint cleanup e2eab3c); the stale binding broke PE elaboration.
     .NUM_GLB_IACT(NUM_GLB_IACT)
   ) pe_inst (
     .clk_i(clk_i),

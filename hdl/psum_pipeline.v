@@ -202,6 +202,17 @@ module psum_pipeline #(
             psum_buffer_data_r[cc_fc*TRANS_BITWIDTH_PSUM*NUM_GLB_PSUM+:TRANS_BITWIDTH_PSUM];
         end
       end
+    end else begin
+      // Convolution keeps its results in row 0's bank; the psum chain adds
+      // the higher cluster rows into it. Reading the whole bus made the
+      // output stream repeat row 1's copy of the result (CLUSTER_ROWS=2
+      // emitted 16 psums where the reference has 8), so blank the rows above
+      // row 0 for the read-out.
+      for (cc_fc = TRANS_BITWIDTH_PSUM*CLUSTER_COLUMNS*NUM_GLB_PSUM;
+           cc_fc < TRANS_BITWIDTH_PSUM*CLUSTERS*NUM_GLB_PSUM;
+           cc_fc = cc_fc + 1) begin
+        psum_readout_src[cc_fc] = 1'b0;
+      end
     end
   end
   reg                                                 ready_dma_i_q1;

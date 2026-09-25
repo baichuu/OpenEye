@@ -266,6 +266,11 @@ module iact_stream_constructor #(
         rd_addr_2                  <= 0;
         rd_addr_3                  <= 0;
         rd_addr_4                  <= 0;
+        rd_cycle_loop_cnt_0        <= 0;
+        rd_cycle_loop_cnt_1        <= 0;
+        rd_cycle_loop_cnt_2        <= 0;
+        rd_cycle_loop_cnt_3        <= 0;
+        rd_cycle_loop_cnt_4        <= 0;
       end else begin
         if (fully_connected_i) begin
           iact_enable_o <= 0;
@@ -547,11 +552,6 @@ reg enable_write_to_storage;
         wr_cycle_loop_cnt_0           <= 0;
         wr_cycle_loop_cnt_1           <= 0;
         wr_cycle_loop_cnt_2           <= 0;
-        rd_cycle_loop_cnt_0           <= 0;
-        rd_cycle_loop_cnt_1           <= 0;
-        rd_cycle_loop_cnt_2           <= 0;
-        rd_cycle_loop_cnt_3           <= 0;
-        rd_cycle_loop_cnt_4           <= 0;
         iact_values_per_cluster_transmit <= 0;
         for (r = 0; r < NUM_GLB_IACT; r = r + 1) begin
           fc_bank_addr[r] <= 0;
