@@ -418,10 +418,19 @@ module psum_pipeline #(
 
         WAIT_TO_SEND_READY_SIGNAL: begin
           results_ready = 0;
-          if ((wght_enable_i_reg == 0) & (iact_enable_i_oep_w == 0)) begin
+          // A previous result burst can still be travelling through the PE
+          // and cluster delay chains after psum_enable_i_reg is cleared. Do
+          // not start the next round's fixed ready delay until every output
+          // valid has drained; otherwise a fast one-channel convolution can
+          // mistake the previous burst for the next round's result.
+          if ((wght_enable_i_reg == 0) & (iact_enable_i_oep_w == 0) &
+              (psum_enable_o == 0)) begin
             fsm_psum_cycle <= fsm_psum_cycle + 1;
           end
-          psum_transmitted <= 1;
+          // Advertise the next compute slot only after the old result valid
+          // has drained. Otherwise OpenEye_Parallel can issue two compute
+          // pulses while a PE can remember only one pending request.
+          psum_transmitted <= (psum_enable_o == 0);
           psum_buffer_en_r <= {(((NUM_GLB_PSUM*CLUSTERS)+1)/2){1'd1}};
           if (fsm_psum_cycle == 16) begin
             fsm_psum_cycle         <= 0;
