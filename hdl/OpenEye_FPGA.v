@@ -386,8 +386,8 @@ reg [1023:0] fst_path;
   reg [32-1:0] fsm_cycle;                              // General-purpose per-state cycle counter; reset to 0 on every state transition.
   wire [15:0]                       trans_cycles_iact; // Register for deciding, how many cycles are needed for transmissions for iact
   wire [15:0]                       trans_cycles_wght; // Register for deciding, how many cycles are needed for transmissions for wght
-  wire [15:0]                       trans_cycles_psum; // Register for deciding, how many cycles are needed for transmissions for psum
-  wire [15:0]                       iact_glb_writing_cycles;
+  wire [17:0]                       trans_cycles_psum; // Register for deciding, how many cycles are needed for transmissions for psum
+  wire [17:0]                       iact_glb_writing_cycles;
   reg [$clog2(CLUSTER_COLUMNS)-1:0] fsm_x_cl;          // Current cluster column being processed during weight loading.
   reg [$clog2(CLUSTER_ROWS)-1:0] fsm_y_cl;             // Current cluster row being processed during weight loading.
   reg [((NUM_GLB_IACT > 1) ? $clog2(NUM_GLB_IACT) : 1)-1:0] fsm_iact_r; // Current iact GLB index during iact loading.
@@ -412,17 +412,17 @@ reg [1023:0] fst_path;
   wire [ 7:0] iact_read_limit_2;
   wire [ 7:0] iact_read_limit_3;
   wire [ 7:0] iact_read_limit_4;
-  wire [11:0] iact_read_inc_0;
-  wire [11:0] iact_read_inc_1;
-  wire [11:0] iact_read_inc_2;
-  wire [11:0] iact_read_inc_3;
-  wire [11:0] iact_read_inc_4;
-  wire [11:0] iact_write_limit_0;
+  wire [15:0] iact_read_inc_0;
+  wire [15:0] iact_read_inc_1;
+  wire [15:0] iact_read_inc_2;
+  wire [15:0] iact_read_inc_3;
+  wire [15:0] iact_read_inc_4;
+  wire [15:0] iact_write_limit_0;
   wire [ 7:0] iact_write_limit_1;
   wire [ 7:0] iact_write_limit_2;
-  wire [11:0] iact_write_inc_0;
-  wire [11:0] iact_write_inc_1;
-  wire [11:0] iact_write_inc_2;
+  wire [15:0] iact_write_inc_0;
+  wire [15:0] iact_write_inc_1;
+  wire [15:0] iact_write_inc_2;
   wire [ 9:0] pagu_wght_limit;
   wire [4-1:0]psum_pagu_cs_limit_0;
   wire [4-1:0]psum_pagu_cs_limit_1;
@@ -589,7 +589,7 @@ reg [1023:0] fst_path;
   // Iact Converter Timing Counters
   // -----------------------------------------------------------------------
   wire [7:0] iact_converter_max_cycles;             // Total y-lines to process including kernel overlap = iact_size_y + kernel_size - 1 (set in GET_WGHT).
-  wire [11:0] iact_buffer_words_per_write;          // Words written per cycle into iact buffer per writing cycle
+  wire [15:0] iact_buffer_words_per_write;          // Full constructor schedule length; 56x56x64 requires 44544 cycles
   wire [11:0] iact_x_pos_inc;
   wire [7:0] iact_words_per_compute;
   wire [7:0] iact_converter_buffer_addr_max_cycles; // Maximum value of iact_converter_buffer_addr_cycles (from dma_storage).
@@ -1407,7 +1407,7 @@ end
   reg [ 7:0] iact_channel_counter_reg;  // Registered copy of iact_channels_counter for cross-process use.
 
   // --- PSUM FSM state registers ---
-  reg [15:0] fsm_psum_cycle;            // Cycle counter within the current PSUM FSM state.
+  reg [17:0] fsm_psum_cycle;            // Cycle counter within the current PSUM FSM state.
   reg [ 3:0] fsm_psum_last_state;       // Previous PSUM FSM state; used for transition tracing in simulation.
   reg [ 3:0] fsm_psum_current_state;    // Current PSUM FSM state (one of PSUM_IDLE … SEND_PSUM_TO_IACT).
   //assign debug_fsm_psum_state = fsm_psum_current_state; // Expose PSUM state on debug port.
@@ -1433,7 +1433,7 @@ end
   wire [7:0] quantized_value_reg [TRANS_WORDS-1:0]; // Quantized output bytes [0..7]; one per parallel filter.
 
   reg [7:0] current_filter; // Index of the filter group currently being quantized/output [0..filters-1].
-  wire[15:0]psum_output_words; // Amoutn of Output words for streaming
+  wire[17:0] psum_output_words; // Number of output words for streaming.
 
   // --- Wires from iact_stream_constructor instances to OpenEye_Parallel ---
   // These buses aggregate the per-instance outputs from all CLUSTER_COLUMNS×CLUSTER_ROWS
@@ -2313,7 +2313,12 @@ end
               iact_to_psum_trans_counter  <= 1;
               iact_to_psum_shift_reg      <= iact_to_psum_mux_reg;
               iact_to_psum_start_shifting <= 1;
-              if (iact_to_psum_x_pos_counter >= iact_size_x - 1) begin
+              // A row is read as iact_x_add_up pixels (whole lanes of every used
+              // cluster); only the first iact_size_x are activations. Wrap the
+              // counter at the row period so the padding pixels are dropped by
+              // the (x_pos < iact_size_x) test above instead of being written as
+              // an extra word row.
+              if (iact_to_psum_x_pos_counter >= iact_x_add_up - 1) begin
                 iact_to_psum_x_pos_counter <= 0;
               end
             end            
@@ -2863,7 +2868,7 @@ end
             .DATA_IACT_OVERHEAD(DATA_IACT_OVERHEAD),
             .RAM_CELLS         (IACT_RAM_CELLS),
             .WORD_BITWIDTH     (TRANS_BITWIDTH_IACT * NUM_GLB_IACT),
-            .ADDRWIDTH         (13)
+            .ADDRWIDTH         (16)
         ) iact_stream_constructor (
             .clk_i                       (clk_i),
             .rst_ni                      (rst_n),
@@ -3316,7 +3321,10 @@ end
           /*assign IACT_CONVERTER_X[cc_gen].IACT_CONVERTER_Y[cr_gen].iact_ready_w[g_gen] =
                 iact_ready_o_oep_w[cc_gen * CLUSTER_ROWS * NUM_GLB_IACT + cr_gen * NUM_GLB_IACT + g_gen];*/
           assign IACT_CONVERTER_X[cc_gen].IACT_CONVERTER_Y[cr_gen].iact_ready_w[g_gen] =
-                iact_ready_o_oep_w[cc_gen * CLUSTER_ROWS * NUM_GLB_IACT + cr_gen * NUM_GLB_IACT + g_gen];
+                (iact_ready_o_oep_w == (2**(CLUSTER_COLUMNS*CLUSTER_ROWS*NUM_GLB_IACT))-1);
+          // TODO DenLeb: per-cluster ready below breaks input height > 1 (test_conv_tall_input), please check
+          //assign IACT_CONVERTER_X[cc_gen].IACT_CONVERTER_Y[cr_gen].iact_ready_w[g_gen] =
+          //      iact_ready_o_oep_w[cc_gen * CLUSTER_ROWS * NUM_GLB_IACT + cr_gen * NUM_GLB_IACT + g_gen];
           assign iact_enable_i_oep_w[cc_gen * CLUSTER_ROWS * NUM_GLB_IACT + cr_gen * NUM_GLB_IACT + g_gen] =
                 IACT_CONVERTER_X[cc_gen].IACT_CONVERTER_Y[cr_gen].iact_enable_w[g_gen];
           assign iact_data_i_oep_w[cc_gen * CLUSTER_ROWS * NUM_GLB_IACT * TRANS_BITWIDTH_IACT +

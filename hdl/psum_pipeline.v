@@ -60,7 +60,7 @@ module psum_pipeline #(
     input wire [15:0] psum_x_all_cluster,
     input wire [3:0] iteration_for_kernels,
     input wire [17:0] needed_cycles,
-    input wire [15:0] trans_cycles_psum,
+    input wire [17:0] trans_cycles_psum,
     input wire [7:0] iact_size_y,
     input wire [11:0] iact_size_x,
     input wire       fully_connected_layer,
@@ -71,7 +71,7 @@ module psum_pipeline #(
     input wire [7*QUANT_AMOUNT-1:0] quant_exp_flat,
     input wire [25*QUANT_AMOUNT-1:0] quant_mant_flat,
     input wire [ 16:0] fsm_psum_limit,
-    input wire [ 15:0] output_words,
+    input wire [ 17:0] output_words,
     input wire [  3:0] psum_cluster_limit_0,
     input wire [  3:0] psum_cluster_limit_1,
     input wire [  3:0] psum_cluster_limit_2,
@@ -102,7 +102,7 @@ module psum_pipeline #(
     output reg last_data_o,
     output reg [3:0] fsm_psum_last_state,
     output reg [3:0] fsm_psum_current_state,
-    output reg [15:0] fsm_psum_cycle,
+    output reg [17:0] fsm_psum_cycle,
     output reg psum_transmitted,
     output reg psum_router_set_reg,
     output reg start_new_cycle,
@@ -130,7 +130,7 @@ module psum_pipeline #(
   reg [4:0] psum_select_cnt_0;
   reg [4:0] psum_select_cnt_1;
   reg [4:0] psum_select_cnt_2;
-  reg [15:0] psum_cycle_loop_cnt_0;
+  reg [17:0] psum_cycle_loop_cnt_0;
   reg [7:0] psum_cycle_loop_cnt_1;
   reg [7:0] psum_cycle_loop_cnt_2;
   reg [7:0] psum_cycle_loop_cnt_3;
@@ -201,17 +201,6 @@ module psum_pipeline #(
           psum_readout_src[cc_fc*DMA_BITWIDTH+:TRANS_BITWIDTH_PSUM] =
             psum_buffer_data_r[cc_fc*TRANS_BITWIDTH_PSUM*NUM_GLB_PSUM+:TRANS_BITWIDTH_PSUM];
         end
-      end
-    end else begin
-      // Convolution keeps its results in row 0's bank; the psum chain adds
-      // the higher cluster rows into it. Reading the whole bus made the
-      // output stream repeat row 1's copy of the result (CLUSTER_ROWS=2
-      // emitted 16 psums where the reference has 8), so blank the rows above
-      // row 0 for the read-out.
-      for (cc_fc = TRANS_BITWIDTH_PSUM*CLUSTER_COLUMNS*NUM_GLB_PSUM;
-           cc_fc < TRANS_BITWIDTH_PSUM*CLUSTERS*NUM_GLB_PSUM;
-           cc_fc = cc_fc + 1) begin
-        psum_readout_src[cc_fc] = 1'b0;
       end
     end
   end
@@ -480,7 +469,6 @@ module psum_pipeline #(
               end
             end
             if (fsm_psum_cycle > {{10{1'd0}},filters}) begin
-              psum_enable_i_reg      <= 0;
               psum_buffer_en_r       <= 0;
               fsm_psum_last_state    <= CALCULATE_PSUM;
               fsm_psum_current_state <= PSUM_GET_RESULTS;
@@ -540,6 +528,7 @@ module psum_pipeline #(
             fsm_psum_cycle      <= fsm_psum_cycle + 1;
           end
           if (fsm_psum_cycle == filters) begin
+            psum_enable_i_reg      <= 0;
             fsm_psum_cycle         <= 0;
             psum_transmitted       <= 1;
             if ((finished_cycles_psum == needed_cycles - 1)) begin
@@ -591,7 +580,10 @@ module psum_pipeline #(
                   end
                 end
               end
-              psum_ready_i_reg <= 0;
+              // Keep psum_ready_i_reg high between rounds. The delay cluster
+              // delays it by 22 cycles on its way to the PEs, so dropping it here
+              // leaves a stale "ready" in the chain when the next round starts
+              // 16 cycles later and results_ready fires before the PEs have run.
             end
           end
         end

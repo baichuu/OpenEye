@@ -15,8 +15,8 @@ registers:
   - {name: needed_cycles, width: 18}
   - {name: trans_cycles_iact, width: 16}
   - {name: trans_cycles_wght, width: 16}
-  - {name: trans_cycles_psum, width: 16}
-  - {name: iact_glb_writing_cycles, width: 16}
+  - {name: trans_cycles_psum, width: 18}
+  - {name: iact_glb_writing_cycles, width: 18}
   - {name: iact_converter_buffer_addr_max_cycles, width: 8}
   - {name: fc_size_reg, width: 14}
   - {name: iact_size_x, width: 12}
@@ -62,29 +62,35 @@ registers:
   - {name: cluster_per_conv_cycle, width: ceil(log2((int(CLUSTER_ROWS)*int(CLUSTER_COLUMNS))+1))}
   - {name: iact_converter_max_cycles, width: 8}
   - {name: iact_x_pos_inc, width: 12}
-  - {name: iact_buffer_words_per_write, width: 12}
+  # These schedule/address fields must cover the 44544 constructor cycles
+  # used by layer1.0.conv1. Twelve bits wrapped the schedule and PAGU RAM
+  # addresses after 4096 cycles when all 64 input channels were active.
+  - {name: iact_buffer_words_per_write, width: 16}
   - {name: iact_words_per_compute, width: 8}
   - {name: pooling_mode, width: 1}
   - {name: gemm_mode, width: 1}
   - {name: used_wght_per_PE, width: int(BUFFER_WIDTH_WGHT)}
-  - {name: psum_output_words, width: 16}
+  # 56x56x64 convolutions emit 114688 padded DMA words.  Sixteen bits
+  # silently truncated that count to 49152 and made PSUM_SEND_RESULTS read
+  # beyond the initialized result window before asserting last_data_o.
+  - {name: psum_output_words, width: 18}
   - {name: overhang_discrepancy, width: 4}
   - {name: iact_read_limit_0, width: 8}
   - {name: iact_read_limit_1, width: 8}
   - {name: iact_read_limit_2, width: 8}
   - {name: iact_read_limit_3, width: 8}
   - {name: iact_read_limit_4, width: 8}
-  - {name: iact_read_inc_0, width: 12}
-  - {name: iact_read_inc_1, width: 12}
-  - {name: iact_read_inc_2, width: 12}
-  - {name: iact_read_inc_3, width: 12}
-  - {name: iact_read_inc_4, width: 12}
-  - {name: iact_write_limit_0, width: 12}
+  - {name: iact_read_inc_0, width: 16}
+  - {name: iact_read_inc_1, width: 16}
+  - {name: iact_read_inc_2, width: 16}
+  - {name: iact_read_inc_3, width: 16}
+  - {name: iact_read_inc_4, width: 16}
+  - {name: iact_write_limit_0, width: 16}
   - {name: iact_write_limit_1, width: 8}
   - {name: iact_write_limit_2, width: 8}
-  - {name: iact_write_inc_0, width: 12}
-  - {name: iact_write_inc_1, width: 12}
-  - {name: iact_write_inc_2, width: 12}
+  - {name: iact_write_inc_0, width: 16}
+  - {name: iact_write_inc_1, width: 16}
+  - {name: iact_write_inc_2, width: 16}
   - {name: pagu_wght_limit, width: 10}
   - {name: psum_pagu_cs_limit_0, width: 4}
   - {name: psum_pagu_cs_limit_1, width: 4}

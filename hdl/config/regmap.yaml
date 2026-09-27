@@ -51,7 +51,10 @@ registers:
   - {name: fsm_psum_limit, width: 17}
   - {name: cluster_per_conv_cycle, width: ceil(log2((int(CLUSTER_ROWS)*int(CLUSTER_COLUMNS))+1))}
   - {name: iact_converter_max_cycles, width: 8}
-  - {name: iact_buffer_words_per_write, width: 12}
+  # These schedule/address fields must cover the 44544 constructor cycles
+  # used by layer1.0.conv1. Twelve bits wrapped the schedule and PAGU RAM
+  # addresses after 4096 cycles when all 64 input channels were active.
+  - {name: iact_buffer_words_per_write, width: 16}
   - {name: pooling_mode, width: 1}
   - {name: gemm_mode, width: 1}
   - {name: test_reg, width: 20}
