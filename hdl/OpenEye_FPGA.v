@@ -214,8 +214,8 @@ module OpenEye_FPGA #(
     parameter UNPACKED_TRACES_ENABLED = 1,
 
     //Pooling Features
-    parameter MAX_POOLING = 0,
-    parameter AVERAGE_POOLING = 1,
+    parameter MAX_POOLING = 1,
+    parameter AVERAGE_POOLING = 0,
 
     //Channels per word
     parameter CHANNELS_PER_WORD = 4,
@@ -427,9 +427,11 @@ reg [1023:0] fst_path;
   wire [4-1:0]psum_pagu_cs_limit_0;
   wire [4-1:0]psum_pagu_cs_limit_1;
   wire [4-1:0]psum_pagu_cs_limit_2;
+  wire [4-1:0]psum_pagu_cs_limit_3;
   wire [4-1:0]psum_pagu_cs_inc_0;
   wire [4-1:0]psum_pagu_cs_inc_1;
   wire [4-1:0]psum_pagu_cs_inc_2;
+  wire [4-1:0]psum_pagu_cs_inc_3;
   wire [8-1:0]psum_pagu_loop_limit_0;
   wire [8-1:0]psum_pagu_loop_limit_1;
   wire [8-1:0]psum_pagu_loop_limit_2;
@@ -2696,9 +2698,11 @@ end
       .psum_cluster_limit_0(psum_pagu_cs_limit_0),
       .psum_cluster_limit_1(psum_pagu_cs_limit_1),
       .psum_cluster_limit_2(psum_pagu_cs_limit_2),
+      .psum_cluster_limit_3(psum_pagu_cs_limit_3),
       .psum_cluster_inc_0(psum_pagu_cs_inc_0),
       .psum_cluster_inc_1(psum_pagu_cs_inc_1),
       .psum_cluster_inc_2(psum_pagu_cs_inc_2),
+      .psum_cluster_inc_3(psum_pagu_cs_inc_3),
       .psum_cycle_loop_limit_0(psum_pagu_loop_limit_0),
       .psum_cycle_loop_limit_1(psum_pagu_loop_limit_1),
       .psum_cycle_loop_limit_2(psum_pagu_loop_limit_2),
@@ -3121,9 +3125,11 @@ end
         .psum_pagu_cs_limit_0(psum_pagu_cs_limit_0),
         .psum_pagu_cs_limit_1(psum_pagu_cs_limit_1),
         .psum_pagu_cs_limit_2(psum_pagu_cs_limit_2),
+        .psum_pagu_cs_limit_3(psum_pagu_cs_limit_3),
         .psum_pagu_cs_inc_0(psum_pagu_cs_inc_0),
         .psum_pagu_cs_inc_1(psum_pagu_cs_inc_1),
         .psum_pagu_cs_inc_2(psum_pagu_cs_inc_2),
+        .psum_pagu_cs_inc_3(psum_pagu_cs_inc_3),
         .psum_pagu_loop_limit_0(psum_pagu_loop_limit_0),
         .psum_pagu_loop_limit_1(psum_pagu_loop_limit_1),
         .psum_pagu_loop_limit_2(psum_pagu_loop_limit_2),
