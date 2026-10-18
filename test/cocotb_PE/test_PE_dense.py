@@ -132,7 +132,7 @@ def test_pe_dense_mode(U, C0, M0, SEED, USE_DSP, PARALLEL_MACS):
         testcase="start_test_pe",
         defines={"NO_TRACE": "TRUE"},
         force_compile=True,
-        waves=True,  # Enable waveforms for debugging
+        waves=False,  # Icarus 13 can hang after a passing non-DSP run with FST enabled.
         simulator="icarus",
         extra_env=extra_env,
         parameters={"SPARSITY_EN": 0, "USE_DSP": USE_DSP}  # Pass both parameters to Verilog

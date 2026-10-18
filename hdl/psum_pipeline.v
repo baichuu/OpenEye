@@ -60,7 +60,7 @@ module psum_pipeline #(
     input wire [15:0] psum_x_all_cluster,
     input wire [3:0] iteration_for_kernels,
     input wire [17:0] needed_cycles,
-    input wire [15:0] trans_cycles_psum,
+    input wire [17:0] trans_cycles_psum,
     input wire [7:0] iact_size_y,
     input wire [11:0] iact_size_x,
     input wire       fully_connected_layer,
@@ -71,7 +71,7 @@ module psum_pipeline #(
     input wire [7*QUANT_AMOUNT-1:0] quant_exp_flat,
     input wire [25*QUANT_AMOUNT-1:0] quant_mant_flat,
     input wire [ 16:0] fsm_psum_limit,
-    input wire [ 15:0] output_words,
+    input wire [ 17:0] output_words,
     input wire [  3:0] psum_cluster_limit_0,
     input wire [  3:0] psum_cluster_limit_1,
     input wire [  3:0] psum_cluster_limit_2,
@@ -104,7 +104,7 @@ module psum_pipeline #(
     output reg last_data_o,
     output reg [3:0] fsm_psum_last_state,
     output reg [3:0] fsm_psum_current_state,
-    output reg [15:0] fsm_psum_cycle,
+    output reg [17:0] fsm_psum_cycle,
     output reg psum_transmitted,
     output reg psum_router_set_reg,
     output reg start_new_cycle,
@@ -133,7 +133,7 @@ module psum_pipeline #(
   reg [4:0] psum_select_cnt_1;
   reg [4:0] psum_select_cnt_2;
   reg [4:0] psum_select_cnt_3;
-  reg [15:0] psum_cycle_loop_cnt_0;
+  reg [17:0] psum_cycle_loop_cnt_0;
   reg [7:0] psum_cycle_loop_cnt_1;
   reg [7:0] psum_cycle_loop_cnt_2;
   reg [7:0] psum_cycle_loop_cnt_3;
@@ -427,10 +427,19 @@ module psum_pipeline #(
 
         WAIT_TO_SEND_READY_SIGNAL: begin
           results_ready = 0;
-          if ((wght_enable_i_reg == 0) & (iact_enable_i_oep_w == 0)) begin
+          // A previous result burst can still be travelling through the PE
+          // and cluster delay chains after psum_enable_i_reg is cleared. Do
+          // not start the next round's fixed ready delay until every output
+          // valid has drained; otherwise a fast one-channel convolution can
+          // mistake the previous burst for the next round's result.
+          if ((wght_enable_i_reg == 0) & (iact_enable_i_oep_w == 0) &
+              (psum_enable_o == 0)) begin
             fsm_psum_cycle <= fsm_psum_cycle + 1;
           end
-          psum_transmitted <= 1;
+          // Advertise the next compute slot only after the old result valid
+          // has drained. Otherwise OpenEye_Parallel can issue two compute
+          // pulses while a PE can remember only one pending request.
+          psum_transmitted <= (psum_enable_o == 0);
           psum_buffer_en_r <= {(((NUM_GLB_PSUM*CLUSTERS)+1)/2){1'd1}};
           if (fsm_psum_cycle == 16) begin
             fsm_psum_cycle         <= 0;
@@ -478,7 +487,6 @@ module psum_pipeline #(
               end
             end
             if (fsm_psum_cycle > {{10{1'd0}},filters}) begin
-              psum_enable_i_reg      <= 0;
               psum_buffer_en_r       <= 0;
               fsm_psum_last_state    <= CALCULATE_PSUM;
               fsm_psum_current_state <= PSUM_GET_RESULTS;
@@ -538,6 +546,7 @@ module psum_pipeline #(
             fsm_psum_cycle      <= fsm_psum_cycle + 1;
           end
           if (fsm_psum_cycle == filters) begin
+            psum_enable_i_reg      <= 0;
             fsm_psum_cycle         <= 0;
             psum_transmitted       <= 1;
             if ((finished_cycles_psum == needed_cycles - 1)) begin
