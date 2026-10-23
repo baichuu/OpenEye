@@ -998,6 +998,29 @@ async def probe_fsm_states(ptp, dut, stall_report_after=20000, oep=None):
                                     states = [str(cl.pe_cluster.gen_X[x].gen_Y[y].pe.current_state_computing.value)
                                               for y in range(oep.PEs_Y) for x in range(oep.PEs_X)]
                                     logger.error("  cluster(%d,%d) PE states by row: %s", cx, cy, states)
+                                    details = []
+                                    for y in range(oep.PEs_Y):
+                                        for x in range(oep.PEs_X):
+                                            pe_probe = cl.pe_cluster.gen_X[x].gen_Y[y].pe
+                                            try:
+                                                sparse = pe_probe.gen_sparse_fsm
+                                                details.append(
+                                                    "c%dr%d:s%s ac%s/%s w%s[%s,%s) aw%s dw%s" % (
+                                                        x, y,
+                                                        str(pe_probe.current_state_computing.value),
+                                                        str(sparse.iact_addr_current.value),
+                                                        str(sparse.iact_addr_count.value),
+                                                        str(pe_probe.wght_data_vec.value),
+                                                        str(sparse.wght_data_start.value),
+                                                        str(sparse.wght_data_end.value),
+                                                        str(pe_probe.first_spad_words_wght.value),
+                                                        str(pe_probe.second_spad_words_wght.value),
+                                                    )
+                                                )
+                                            except Exception as detail_exc:
+                                                details.append("c%dr%d:?%s" % (x, y, type(detail_exc).__name__))
+                                    logger.error("  cluster(%d,%d) sparse PE detail: %s",
+                                                 cx, cy, " ".join(details))
                                     pe = cl.pe_cluster.gen_X[0].gen_Y[0].pe
                                     logger.error("  cluster(%d,%d) first PE psum_enable_i=%s psum_select=%s",
                                                  cx, cy, str(pe.psum_enable_i.value), str(pe.psum_select.value))
@@ -1022,7 +1045,7 @@ async def probe_fsm_states(ptp, dut, stall_report_after=20000, oep=None):
             previous = state
         if fail_after:
             key = [state]
-            for name in ("fsm_psum_current_state", "fsm_psum_cycle"):
+            for name in ("fsm_psum_current_state", "fsm_psum_cycle", "current_cycle"):
                 try:
                     key.append(int(getattr(dut, name).value))
                 except Exception:
@@ -1032,9 +1055,9 @@ async def probe_fsm_states(ptp, dut, stall_report_after=20000, oep=None):
                 idle_for += 1
                 if idle_for == fail_after:
                     if not reported:
-                        logger.error("FSM stuck (main state, psum state, psum cycle) = %s", key)
+                        logger.error("FSM progress counters stuck at %s", key)
                     raise AssertionError(
-                        "No FSM progress for %d cycles (main state, psum state, psum cycle) = %s; "
+                        "No FSM progress for %d cycles (main state, psum state, psum cycle, compute cycle) = %s; "
                         "see the stall diagnostics above" % (fail_after, key))
             else:
                 progress_key = key
@@ -1634,15 +1657,10 @@ async def compare_stream_Conv(ptp, dut, layer_number, layer_repetition, layer_pa
         """
         words = oep.DMA_BITWIDTH // 32
         dut._log.info("Output Stream started")
-        used_clusters_per_calc = math.ceil(layer_parameters.iact_size_x / 4) * 4
-        values_per_transmission = math.ceil(layer_parameters.different_kernels_per_calculation*used_clusters_per_calc/2)
-        transmissions_per_cycle = (oep.Clusters_Y * oep.Clusters_X * oep.PEs_X)//2
-        current_cycle = 0
+        coordinates = output_order[layer_repetition]
+        coordinate_index = 0
         read_data = 1
         chance = 100
-        x_repetitions = layer_parameters.iact_x_line_repetitions
-        x_block_width = layer_parameters.iact_x_add_up // max(x_repetitions, 1)
-        x_block_base = 0
         while (dut.enable_dma_o.value == 1):
             if (read_data):
                 if(logging.DEBUG >= login_level):
@@ -1653,52 +1671,24 @@ async def compare_stream_Conv(ptp, dut, layer_number, layer_repetition, layer_pa
                         storage_file.close()
                         logger.error("Error writing output txt-file")
                         raise Exception("X detected.")
-                if (current_cycle < values_per_transmission):
-                    for i in range(words):
-                        if(logging.DEBUG >= login_level):
-                            storage_file.write("f: " + str(f) + " x: " + str(x) + " y: " + str(y) + "\n")
-                        
-                        try:
-                            dram.fmap[layer_number + 1][f][x][y] = int(dut.data_dma_o.value[oep.DATA_PSUM_BITWIDTH*(i+1)-1:oep.DATA_PSUM_BITWIDTH*i])
-                            if (dram.fmap[layer_number + 1][f][x][y] >= 2**(oep.DATA_PSUM_BITWIDTH-1)):
-                                dram.fmap[layer_number + 1][f][x][y] = dram.fmap[layer_number + 1][f][x][y] - 2**oep.DATA_PSUM_BITWIDTH
-                        except:
-                            pass
-                        x = x + 1
-                    if x_repetitions > 1:
-                        # A row wider than one repetition is read out as
-                        # x_block_width-pixel blocks: every filter for
-                        # repetition 0, then every filter for repetition 1...
-                        # (the psum buffer address is filter + filters * repetition).
-                        if (x - x_block_base >= x_block_width):
-                            f = f + 1
-                            x = x_block_base
-                            if(f == layer_parameters.filters):
-                                f = 0
-                                x_block_base = x_block_base + x_block_width
-                                x = x_block_base
-                                if(x_block_base >= layer_parameters.iact_x_add_up):
-                                    x_block_base = 0
-                                    x = 0
-                                    y = y + 1
-                                    if(y >= layer_parameters.iact_size_y):
-                                        y = 0
-                    elif (current_cycle % math.ceil(oep.PEs_X/words) == math.ceil(oep.PEs_X/words) - 1):
-                        if(x >= layer_parameters.iact_size_x):
-                            x = 0
-                            f = f + 1
-                            if(f == layer_parameters.filters):
-                                f = 0
-                                y = y + 1
-                                if(y >= layer_parameters.iact_size_y):
-                                    y = 0
-                else:
-                    for i in range(words):
-                        if(logging.DEBUG >= login_level):
-                            storage_file.write("Empty storage line." + "\n")
-                current_cycle = current_cycle + 1
-                if (current_cycle == transmissions_per_cycle):
-                    current_cycle = 0
+                for i in range(words):
+                    assert coordinate_index < len(coordinates), (
+                        "Convolution DMA emitted more values than the reference layout"
+                    )
+                    x, y, f = coordinates[coordinate_index]
+                    coordinate_index += 1
+                    if(logging.DEBUG >= login_level):
+                        storage_file.write("f: " + str(f) + " x: " + str(x) + " y: " + str(y) + "\n")
+                    if (f < layer_parameters.filters and
+                            x < layer_parameters.iact_size_x and
+                            y < layer_parameters.iact_size_y):
+                        value = int(dut.data_dma_o.value[
+                            oep.DATA_PSUM_BITWIDTH*(i+1)-1:
+                            oep.DATA_PSUM_BITWIDTH*i
+                        ])
+                        if value >= 2**(oep.DATA_PSUM_BITWIDTH-1):
+                            value -= 2**oep.DATA_PSUM_BITWIDTH
+                        dram.fmap[layer_number + 1][f][x][y] = value
 
             if random.randint(1, 100) <= chance:
                 read_data = 1
@@ -1709,6 +1699,10 @@ async def compare_stream_Conv(ptp, dut, layer_number, layer_repetition, layer_pa
             await Timer(ptp.clk_cycle, unit=ptp.clk_cycle_unit)
 
         cocotb.start_soon(set_input(ptp,(dut.ready_dma_i), 0))
+        assert coordinate_index == len(coordinates), (
+            f"Convolution DMA emitted {coordinate_index} values, "
+            f"expected {len(coordinates)}"
+        )
 
     if(math.floor(layer_repetition%(layer_parameters.iact_transmissions_pe*layer_parameters.needed_wght_transmissions)) == \
         (layer_parameters.iact_transmissions_pe*layer_parameters.needed_wght_transmissions-1)):
@@ -2682,22 +2676,33 @@ async def trace_pe_calc_loop(ptp, dut, oep, cl_x=0, cl_y=0, pe_row=0, pe_col=0,
     of those counters says which of the two ended it.
     """
     try:
-        fsm = (dut.OpenEye_Parallel.gen_x[cl_x].gen_y[cl_y].OpenEye_Cluster
-               .pe_cluster.gen_X[pe_col].gen_Y[pe_row].pe.gen_sparse_fsm)
+        pe = (dut.OpenEye_Parallel.gen_x[cl_x].gen_y[cl_y].OpenEye_Cluster
+              .pe_cluster.gen_X[pe_col].gen_Y[pe_row].pe)
+        fsm = pe.gen_sparse_fsm
     except Exception as exc:
         logger.error("trace_pe_calc_loop: PE unreachable (%s)", type(exc).__name__)
         return
-    names = ("current_state_computing", "iact_addr_current", "iact_addr_count",
-             "wght_data_vec", "wght_data_end", "wght_data_start",
-             "wght_data_SPad_addr", "values_valid", "computing")
+    signals = (
+        ("current_state_computing", pe),
+        ("iact_addr_current", fsm),
+        ("iact_addr_count", fsm),
+        ("wght_data_vec", pe),
+        ("wght_data_end", fsm),
+        ("wght_data_start", fsm),
+        ("wght_data_SPad_addr", pe),
+        ("values_valid", pe),
+        ("computing", pe),
+        ("first_spad_words_wght", pe),
+        ("second_spad_words_wght", pe),
+    )
     lines = 0
     prev = None
     while lines < max_lines:
         await Timer(ptp.clk_cycle, unit=ptp.clk_cycle_unit)
         vals = []
-        for n in names:
+        for name, owner in signals:
             try:
-                vals.append(int(getattr(fsm, n).value))
+                vals.append(int(getattr(owner, name).value))
             except Exception:
                 vals.append(-1)
         if vals == prev:
@@ -2705,7 +2710,9 @@ async def trace_pe_calc_loop(ptp, dut, oep, cl_x=0, cl_y=0, pe_row=0, pe_col=0,
         prev = vals
         if vals[0] == 0 and vals[8] == 0:
             continue
-        logger.error("calc %s", " ".join("%s=%d" % (n, v) for n, v in zip(names, vals)))
+        logger.error(
+            "calc %s", " ".join("%s=%d" % (n, v) for (n, _), v in zip(signals, vals))
+        )
         lines += 1
 
 
@@ -3011,16 +3018,14 @@ async def check_fc_activation_writes(dut, params, layer, activations):
                     data = int(memory.data_i.value)
                     values = [(data >> (slot * params.IACT_WOH_Bitwidth)) & mask for slot in range(2)]
                 index = counts[key]
-                #Outcommented non-working assert for NUM_GLB_IACT != 1. Multiple NUM_GLB_IACTs  save in one RAM, while this is always re_en 1. Therefore temporary 0s are stored but rewritten after some cycles.
-                #For Claude to fix: Better check after writting to the storages than controlling live.
-                #assert index < expected_count, f"Extra FC write in {key}"
+                assert index < expected_count, f"Extra FC write in {key}"
                 tile, within_tile = divmod(index, writes_per_run)
                 pair, virtual_row = divmod(within_tile, pe_rows)
                 expected_bank = virtual_row % banks
                 rows_in_bank = (pe_rows + banks - 1 - expected_bank) // banks
                 expected_addr = (tile * (channels // 2) * rows_in_bank
                                  + pair * rows_in_bank + virtual_row // banks)
-                """assert ((bank, address) == (expected_bank, expected_addr)) | (((bank, address) == (0,0) and banks != 1)), (
+                assert (bank, address) == (expected_bank, expected_addr), (
                     f"FC write destination {key}: bank/address {(bank, address)}, word {index}")
                 source = ((tile * rows + row) * pe_rows * channels
                           + pair * pe_rows * 2 + virtual_row * 2)
@@ -3030,7 +3035,7 @@ async def check_fc_activation_writes(dut, params, layer, activations):
                     f"FC activation write {key} bank={bank} addr={address}: "
                     f"{values} != input[{source}:{source + 2}]={expected}")
                 if index % writes_per_run:
-                    assert cycle == previous[key] + 1, f"FC write bubble in {key}" """
+                    assert cycle == previous[key] + 1, f"FC write bubble in {key}"
                 previous[key] = cycle
                 counts[key] += 1
     logger.info("FC activation RAM writes checked: %s", counts)

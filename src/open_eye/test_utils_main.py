@@ -605,6 +605,7 @@ def calculate_conv_serial(params, layer_params, calculated_results, file_dma_ref
                 les.x_start = 0
             else :
                 les.x_start = x_cor
+    return array
 
 def calculate_conv_parallel(params, layer_params, calculated_results, cluster_order, layer_repetition, file_dma_ref):
     coordinates = []
@@ -683,8 +684,9 @@ def calculate_conv_parallel(params, layer_params, calculated_results, cluster_or
 def calculate_conv_output_stream_mp(layer_repetition, layer_number, params, layer_params, cluster_order, calculated_results, return_dict):
     file_dma_ref = gtu.open_or_create_file('demo/layer_' + str(layer_number) + '_' + str(layer_repetition) + '/dma_stream_ref.txt')
     if (params.SERIAL):
-        calculate_conv_serial(params, layer_params, calculated_results, file_dma_ref)
-        return_dict[layer_repetition] = []
+        return_dict[layer_repetition] = calculate_conv_serial(
+            params, layer_params, calculated_results, file_dma_ref
+        )
     else:
         return_dict[layer_repetition] = calculate_conv_parallel(params, layer_params, calculated_results, cluster_order, layer_repetition, file_dma_ref)
     file_dma_ref.close()
