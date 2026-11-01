@@ -5,6 +5,7 @@
 
 import sys
 import os
+import json
 import cocotb
 import tensorflow as tf
 from cocotb.clock import Clock
@@ -146,7 +147,7 @@ async def start_test_fpga(dut):
     """
     global logger
     await setup_file_logging()
-    timeout_time = 1500000000
+    timeout_time = int(os.environ.get("OPENEYE_SIM_TIMEOUT_NS", "15000000"))
     timeout_unit = 'ns'
 
     try:
@@ -431,6 +432,49 @@ async def execute_model(dut, only_files, sparse_iacts, sparse_wghts, layer_es, s
                         for x in range(len(row)):
                             row[x] = 1 + c + 5 * f
         logger.info("OPENEYE_MIX_WEIGHTS: weight[c][f] = 1 + c + 5*f")
+    if os.environ.get("OPENEYE_WGHT_PATTERN_JSON"):
+        pattern_path = Path(os.environ["OPENEYE_WGHT_PATTERN_JSON"]).resolve()
+        pattern = json.loads(pattern_path.read_text(encoding="utf-8"))
+        weights = pattern.get("weights")
+
+        def _shape(value):
+            if not isinstance(value, list):
+                return []
+            child_shapes = {tuple(_shape(item)) for item in value}
+            if len(child_shapes) != 1:
+                raise AssertionError("Ragged OPENEYE_WGHT_PATTERN_JSON tensor")
+            return [len(value), *next(iter(child_shapes))]
+
+        if "Dense" in str(layer_parameters[0].layer_name):
+            expected_shape = [
+                layer_parameters[0].filters,
+                layer_parameters[0].iact_size_x,
+            ]
+        else:
+            expected_shape = [
+                layer_parameters[0].channels,
+                layer_parameters[0].filters,
+                layer_parameters[0].kernel_size[1],
+                layer_parameters[0].kernel_size[0],
+            ]
+        if _shape(weights) != expected_shape:
+            raise AssertionError(
+                f"Weight fixture shape {_shape(weights)} != {expected_shape}"
+            )
+
+        def _validate_int8(value):
+            if isinstance(value, list):
+                for item in value:
+                    _validate_int8(item)
+            elif isinstance(value, bool) or not isinstance(value, int) or not -128 <= value <= 127:
+                raise AssertionError("Weight fixture contains a non-INT8 value")
+
+        _validate_int8(weights)
+        dram.weights[0] = weights
+        logger.info(
+            "OPENEYE_WGHT_PATTERN_JSON: loaded %s from %s",
+            pattern.get("scheme", "unknown"), pattern_path,
+        )
     if os.environ.get("OPENEYE_RAMP_IACTS"):
         # Layer-0 activation k becomes k+1, so a PE's stored payloads name the
         # exact input positions it received. Constant operands can only show
@@ -443,9 +487,9 @@ async def execute_model(dut, only_files, sparse_iacts, sparse_wghts, layer_es, s
             if os.environ.get("OPENEYE_RAMP_MULT"):
                 # Deterministic pseudo-random activations, full-rank for fitting.
                 return ((ctr[0] - 1) * int(os.environ["OPENEYE_RAMP_MULT"])) % 61 + 1
-            return (ctr[0] - 1) % 100 + 1
+            return ((ctr[0] - 1) % 127) + 1
         dram.fmap[model[0].name] = _ramp(dram.fmap[model[0].name])
-        logger.info("OPENEYE_RAMP_IACTS: layer-0 input set to 1..N in flat order")
+        logger.info("OPENEYE_RAMP_IACTS: layer-0 input cycles through 1..127")
     if os.environ.get("OPENEYE_BIAS_STEP"):
         # Give each output channel a distinct value after quantization so a
         # channel permutation cannot pass a constant-weight regression.

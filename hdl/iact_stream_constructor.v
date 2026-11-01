@@ -65,7 +65,7 @@ module iact_stream_constructor #(
     parameter  RAM_CELLS           = 32,   // Buffer depth
     parameter  RAM_CELLS_WORDWIDTH = 64,   // Buffer word width
     parameter  WORD_BITWIDTH       = 72,   // Total word width
-    parameter  ADDRWIDTH           = 13,   // Address width
+    parameter  ADDRWIDTH           = 16,   // Address width
     parameter  LIMIT_SIZE_IACT     = 18,
     localparam CLUSTERS            = CLUSTER_ROWS * CLUSTER_COLUMNS,
     localparam PES                 = PE_X * PE_Y,
@@ -267,6 +267,11 @@ module iact_stream_constructor #(
         rd_addr_2                  <= 0;
         rd_addr_3                  <= 0;
         rd_addr_4                  <= 0;
+        rd_cycle_loop_cnt_0        <= 0;
+        rd_cycle_loop_cnt_1        <= 0;
+        rd_cycle_loop_cnt_2        <= 0;
+        rd_cycle_loop_cnt_3        <= 0;
+        rd_cycle_loop_cnt_4        <= 0;
       end else begin
         if (fully_connected_i) begin
           iact_enable_o <= 0;
@@ -548,11 +553,6 @@ reg enable_write_to_storage;
         wr_cycle_loop_cnt_0           <= 0;
         wr_cycle_loop_cnt_1           <= 0;
         wr_cycle_loop_cnt_2           <= 0;
-        rd_cycle_loop_cnt_0           <= 0;
-        rd_cycle_loop_cnt_1           <= 0;
-        rd_cycle_loop_cnt_2           <= 0;
-        rd_cycle_loop_cnt_3           <= 0;
-        rd_cycle_loop_cnt_4           <= 0;
         iact_values_per_cluster_transmit <= 0;
         for (r = 0; r < NUM_GLB_IACT; r = r + 1) begin
           fc_bank_addr[r] <= 0;

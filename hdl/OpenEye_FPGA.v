@@ -182,7 +182,7 @@ module OpenEye_FPGA #(
     parameter ROUTER_MODES_PSUM = 3,
 
 
-    parameter BUFFER_WIDTH_IACT_STREAM_CONSTRUCTOR = BUFFER_WIDTH_IACT + 2,
+    parameter BUFFER_WIDTH_IACT_STREAM_CONSTRUCTOR = 16,
     parameter real FSM_IACT_RTR_CCLS_A = (CLUSTERS * NUM_GLB_IACT),
     parameter real FSM_IACT_RTR_CCLS_B = DMA_BITWIDTH / ROUTER_MODES_IACT,
     parameter real FSM_IACT_RTR_CCLS = FSM_IACT_RTR_CCLS_A / FSM_IACT_RTR_CCLS_B,
@@ -396,7 +396,7 @@ reg [1023:0] fst_path;
   wire [TRANS_IACT_WIDTH-1:0]       trans_cycles_iact; // Register for deciding, how many cycles are needed for transmissions for iact
   wire [TRANS_WGHT_WIDTH-1:0]       trans_cycles_wght; // Register for deciding, how many cycles are needed for transmissions for wght
   wire [TRANS_PSUM_WIDTH-1:0]       trans_cycles_psum; // Register for deciding, how many cycles are needed for transmissions for psum
-  wire [15:0]                       iact_glb_writing_cycles;
+  wire [17:0]                       iact_glb_writing_cycles;
   reg [$clog2(CLUSTER_COLUMNS)-1:0] fsm_x_cl;          // Current cluster column being processed during weight loading.
   reg [$clog2(CLUSTER_ROWS)-1:0] fsm_y_cl;             // Current cluster row being processed during weight loading.
   reg [((NUM_GLB_IACT > 1) ? $clog2(NUM_GLB_IACT) : 1)-1:0] fsm_iact_r; // Current iact GLB index during iact loading.
@@ -421,17 +421,17 @@ reg [1023:0] fst_path;
   wire [LIMIT_SIZE_IACT-1:0] iact_read_limit_2;
   wire [LIMIT_SIZE_IACT-1:0] iact_read_limit_3;
   wire [LIMIT_SIZE_IACT-1:0] iact_read_limit_4;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_read_inc_0;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_read_inc_1;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_read_inc_2;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_read_inc_3;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_read_inc_4;
+  wire [15:0] iact_read_inc_0;
+  wire [15:0] iact_read_inc_1;
+  wire [15:0] iact_read_inc_2;
+  wire [15:0] iact_read_inc_3;
+  wire [15:0] iact_read_inc_4;
   wire [LIMIT_SIZE_IACT-1:0] iact_write_limit_0;
   wire [LIMIT_SIZE_IACT-1:0] iact_write_limit_1;
   wire [LIMIT_SIZE_IACT-1:0] iact_write_limit_2;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_write_inc_0;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_write_inc_1;
-  wire [BUFFER_WIDTH_IACT-1:0] iact_write_inc_2;
+  wire [15:0] iact_write_inc_0;
+  wire [15:0] iact_write_inc_1;
+  wire [15:0] iact_write_inc_2;
   wire [ 9:0] pagu_wght_limit;
   wire [4-1:0]psum_pagu_cs_limit_0;
   wire [4-1:0]psum_pagu_cs_limit_1;
@@ -600,7 +600,7 @@ reg [1023:0] fst_path;
   // Iact Converter Timing Counters
   // -----------------------------------------------------------------------
   wire [7:0] iact_converter_max_cycles;             // Total y-lines to process including kernel overlap = iact_size_y + kernel_size - 1 (set in GET_WGHT).
-  wire [BUFFER_WIDTH_IACT_STREAM_CONSTRUCTOR-1:0] iact_buffer_words_per_write;          // Words written per cycle into iact buffer per writing cycle
+  wire [15:0] iact_buffer_words_per_write;          // Words written per cycle into iact buffer per writing cycle
   wire [11:0] iact_x_pos_inc;
   wire [7:0] iact_words_per_compute;
   wire [7:0] iact_converter_buffer_addr_max_cycles; // Maximum value of iact_converter_buffer_addr_cycles (from dma_storage).
@@ -1360,7 +1360,7 @@ end
   //#######################
   reg                                                     iact_buffer_en_r   [IACT_RAM_CELLS-1:0]; // Per-cell read enable from FSM or converter.
   reg                                                     iact_buffer_en_w   [IACT_RAM_CELLS-1:0]; // Per-cell write enable from FSM or converter.
-  reg [                                 BUFFER_WIDTH_IACT-1:0] iact_buffer_addr   [IACT_RAM_CELLS-1:0]; // Per-cell address (half-width; MSB is buffer_select).
+  wire [                                 BUFFER_WIDTH_IACT-1:0] iact_buffer_addr   [IACT_RAM_CELLS-1:0]; // Per-cell address (half-width; MSB is buffer_select).
   reg [                        IACT_CELL_INPUT_WIDTH-1:0] iact_buffer_data_w;                      // Per-cell write data (64 bits).
   wire [ IACT_RAM_CELLS_WORD_BITWIDTH*IACT_RAM_CELLS-1:0] iact_buffer_data_r;                     // Active-half read data: unpacked from iact_buffer_data_r.
 
@@ -1411,7 +1411,7 @@ end
   reg [ 7:0] iact_channel_counter_reg;  // Registered copy of iact_channels_counter for cross-process use.
 
   // --- PSUM FSM state registers ---
-  reg [31:0] fsm_psum_cycle;            // Cycle counter within the current PSUM FSM state.
+  reg [23:0] fsm_psum_cycle;            // Cycle counter within the current PSUM FSM state.
   reg [ 3:0] fsm_psum_last_state;       // Previous PSUM FSM state; used for transition tracing in simulation.
   reg [ 3:0] fsm_psum_current_state;    // Current PSUM FSM state (one of PSUM_IDLE … SEND_PSUM_TO_IACT).
   //assign debug_fsm_psum_state = fsm_psum_current_state; // Expose PSUM state on debug port.
@@ -1434,7 +1434,7 @@ end
   // --- Quantization output staging (SEND_PSUM_TO_IACT) ---
   // After quantization, the 8 output bytes (one per filter in the current group)
   // are held here for packing into the iact buffer.
-  reg [7:0] quantized_value_reg [TRANS_WORDS-1:0]; // Quantized output bytes [0..7]; one per parallel filter.
+  wire [7:0] quantized_value_reg [TRANS_WORDS-1:0]; // Quantized output bytes [0..7]; one per parallel filter.
 
   reg [7:0] current_filter; // Index of the filter group currently being quantized/output [0..filters-1].
   wire[24-1:0]psum_output_words; // Amoutn of Output words for streaming
